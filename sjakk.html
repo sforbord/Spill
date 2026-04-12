@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sjakk</title>
+<title>Hestesjakk</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -42,7 +42,7 @@ h1{font-family:'Playfair Display',serif;font-size:34px;font-weight:700;letter-sp
 </style>
 </head>
 <body>
-<h1>SJAKK</h1>
+<h1>HESTESJAKK</h1>
 <p class="sub">Du spiller som hvit &mdash; maskinen spiller som svart</p>
 <div class="diff-row">
   <button class="dbtn on" data-d="1">Enkel</button>
@@ -287,6 +287,9 @@ function execMove(m){
 
   if(captured){if(captured[0]==='b') capW.push(captured[1]); else capB.push(captured[1]);}
 
+  // Whinny when a knight moves
+  if(piece[1]==='N') playWhinny();
+
   history.push(san);
   updateMoveList();
   updateBars();
@@ -388,7 +391,386 @@ function doAI(){
   execMove(chosen);
 }
 
-// ── Drawing ────────────────────────────────────────────────────────────────
+// ── Whinny sound (Web Audio API) ──────────────────────────────────────────
+function playWhinny(){
+  try {
+    const ac=new(window.AudioContext||window.webkitAudioContext)();
+    const master=ac.createGain(); master.gain.value=0.22; master.connect(ac.destination);
+    // Series of gliding tones that sound like a horse whinny
+    const notes=[
+      {f0:520,f1:900,t:0,dur:0.18},
+      {f0:900,f1:1200,t:0.15,dur:0.20},
+      {f0:1200,f1:800,t:0.30,dur:0.22},
+      {f0:800,f1:400,t:0.48,dur:0.28},
+      {f0:400,f1:250,t:0.70,dur:0.30}
+    ];
+    notes.forEach(({f0,f1,t,dur})=>{
+      const osc=ac.createOscillator();
+      const g=ac.createGain();
+      osc.type='sawtooth';
+      osc.frequency.setValueAtTime(f0, ac.currentTime+t);
+      osc.frequency.exponentialRampToValueAtTime(f1, ac.currentTime+t+dur);
+      g.gain.setValueAtTime(0.3, ac.currentTime+t);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime+t+dur);
+      osc.connect(g); g.connect(master);
+      osc.start(ac.currentTime+t);
+      osc.stop(ac.currentTime+t+dur+0.05);
+    });
+    // Breath noise layer
+    const buf=ac.createBuffer(1,ac.sampleRate*1.1,ac.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*0.15;
+    const ns=ac.createBufferSource(); ns.buffer=buf;
+    const nf=ac.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=900; nf.Q.value=0.8;
+    const ng=ac.createGain();
+    ng.gain.setValueAtTime(0.0,ac.currentTime);
+    ng.gain.linearRampToValueAtTime(0.6,ac.currentTime+0.15);
+    ng.gain.linearRampToValueAtTime(0.0,ac.currentTime+1.0);
+    ns.connect(nf); nf.connect(ng); ng.connect(master);
+    ns.start(); ns.stop(ac.currentTime+1.1);
+  } catch(e){}
+}
+
+// ── Draw Geir the horse knight ─────────────────────────────────────────────
+function drawGeir(ctx, x, y, sz, isWhite){
+  const cx=x+sz/2, cy=y+sz/2;
+  const s=sz/60;
+  ctx.save();
+  ctx.translate(cx,cy);
+
+  const bodyCol   = isWhite ? '#d4c4a0' : '#2a1e0e';
+  const outlineC  = isWhite ? '#5a4020' : '#c8a050';
+  const skinCol   = isWhite ? '#c8a070' : '#8b5a2b';
+  const hairCol   = isWhite ? '#555048' : '#c8b890';
+  const beardCol  = isWhite ? '#666058' : '#b8a880';
+  const shirtBase = isWhite ? '#d8d0c0' : '#1a2a3a';
+  const stripeCol = isWhite ? '#a0a8b8' : '#2a4060';
+  const textCol   = isWhite ? '#3a2e22' : '#f0e8d0';
+
+  // Shadow
+  ctx.beginPath();
+  ctx.ellipse(0,18*s,16*s,4*s,0,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.fill();
+
+  // --- BODY / SHIRT ---
+  ctx.beginPath();
+  ctx.ellipse(0,16*s,13*s,14*s,0,0,Math.PI*2);
+  ctx.fillStyle=shirtBase; ctx.fill();
+  ctx.strokeStyle=outlineC; ctx.lineWidth=1*s; ctx.stroke();
+
+  // Shirt stripes (vertical)
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(0,16*s,13*s,14*s,0,0,Math.PI*2);
+  ctx.clip();
+  ctx.strokeStyle=stripeCol; ctx.lineWidth=1.2*s;
+  for(let i=-3;i<=3;i++){
+    ctx.beginPath();
+    ctx.moveTo(i*4*s,4*s); ctx.lineTo(i*4*s,30*s); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Collar / neck
+  ctx.beginPath();
+  ctx.moveTo(-4*s,4*s); ctx.lineTo(0,8*s); ctx.lineTo(4*s,4*s);
+  ctx.strokeStyle=outlineC; ctx.lineWidth=1.2*s; ctx.stroke();
+
+  // --- NECK ---
+  ctx.beginPath();
+  ctx.moveTo(-7*s,-2*s); ctx.quadraticCurveTo(-8*s,4*s,-6*s,6*s);
+  ctx.lineTo(6*s,6*s); ctx.quadraticCurveTo(8*s,4*s,7*s,-2*s); ctx.closePath();
+  ctx.fillStyle=skinCol; ctx.fill();
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.8*s; ctx.stroke();
+
+  // --- HEAD ---
+  // Slightly wide, jowly face like Geir
+  ctx.beginPath();
+  ctx.ellipse(0,-10*s,13*s,14*s,0,0,Math.PI*2);
+  ctx.fillStyle=skinCol; ctx.fill();
+  ctx.strokeStyle=outlineC; ctx.lineWidth=1*s; ctx.stroke();
+
+  // --- MANE / MESSY HAIR (bushy, sticking up on sides) ---
+  // Left tufts
+  const hairTufts=[
+    {x:-13,y:-18,rx:5,ry:7,a:-0.5},
+    {x:-10,y:-24,rx:4,ry:6,a:-0.3},
+    {x:-5,y:-26,rx:4,ry:7,a:-0.1},
+    {x:1,y:-27,rx:5,ry:7,a:0.1},
+    {x:7,y:-25,rx:4,ry:6,a:0.3},
+    {x:12,y:-20,rx:4,ry:6,a:0.5},
+    // Extra messy bits sticking up
+    {x:-8,y:-28,rx:3,ry:5,a:-0.6},
+    {x:3,y:-30,rx:3,ry:5,a:0.2},
+    {x:9,y:-27,rx:3,ry:4,a:0.7},
+  ];
+  hairTufts.forEach(({x,y,rx,ry,a})=>{
+    ctx.beginPath();
+    ctx.ellipse(x*s,y*s,rx*s,ry*s,a,0,Math.PI*2);
+    ctx.fillStyle=hairCol; ctx.fill();
+  });
+  // Hair outline stroke
+  ctx.beginPath();
+  ctx.ellipse(0,-10*s,13*s,14*s,0,0,Math.PI*2);
+  ctx.fillStyle=skinCol; ctx.fill();
+  ctx.strokeStyle=outlineC; ctx.lineWidth=1*s; ctx.stroke();
+
+  // --- HORSE EARS (small, poking through hair) ---
+  ctx.beginPath();
+  ctx.moveTo(-6*s,-22*s); ctx.lineTo(-10*s,-30*s); ctx.lineTo(-2*s,-23*s);
+  ctx.fillStyle=skinCol; ctx.fill(); ctx.strokeStyle=outlineC; ctx.lineWidth=0.8*s; ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(7*s,-21*s); ctx.lineTo(11*s,-29*s); ctx.lineTo(3*s,-23*s);
+  ctx.fillStyle=skinCol; ctx.fill(); ctx.strokeStyle=outlineC; ctx.lineWidth=0.8*s; ctx.stroke();
+  // Redraw hair over ears for layering
+  [{x:-10,y:-24,rx:4,ry:6,a:-0.3},{x:7,y:-25,rx:4,ry:6,a:0.3},{x:9,y:-27,rx:3,ry:4,a:0.7}].forEach(({x,y,rx,ry,a})=>{
+    ctx.beginPath(); ctx.ellipse(x*s,y*s,rx*s,ry*s,a,0,Math.PI*2);
+    ctx.fillStyle=hairCol; ctx.fill();
+  });
+
+  // --- EYEBROWS (heavy, slightly furrowed — serious Geir look) ---
+  ctx.strokeStyle=hairCol; ctx.lineWidth=2.2*s; ctx.lineCap='round';
+  // Left brow - angled down toward center
+  ctx.beginPath(); ctx.moveTo(-10*s,-17*s); ctx.lineTo(-3*s,-15*s); ctx.stroke();
+  // Right brow
+  ctx.beginPath(); ctx.moveTo(10*s,-17*s); ctx.lineTo(3*s,-15*s); ctx.stroke();
+
+  // --- EYES (slightly squinting, serious) ---
+  // Left eye
+  ctx.beginPath(); ctx.ellipse(-5*s,-11*s,4*s,3*s,0,0,Math.PI*2);
+  ctx.fillStyle='#f0ece0'; ctx.fill();
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.8*s; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(-5*s,-11*s,2*s,2.5*s,0,0,Math.PI*2);
+  ctx.fillStyle='#2a1a0a'; ctx.fill();
+  ctx.beginPath(); ctx.arc(-4*s,-12*s,0.8*s,0,Math.PI*2);
+  ctx.fillStyle='#fff'; ctx.fill();
+  // Squint upper lid
+  ctx.beginPath(); ctx.moveTo(-9*s,-11*s); ctx.quadraticCurveTo(-5*s,-14.5*s,-1*s,-11*s);
+  ctx.strokeStyle=outlineC; ctx.lineWidth=1*s; ctx.stroke();
+
+  // Right eye
+  ctx.beginPath(); ctx.ellipse(5*s,-11*s,4*s,3*s,0,0,Math.PI*2);
+  ctx.fillStyle='#f0ece0'; ctx.fill();
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.8*s; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(5*s,-11*s,2*s,2.5*s,0,0,Math.PI*2);
+  ctx.fillStyle='#2a1a0a'; ctx.fill();
+  ctx.beginPath(); ctx.arc(6*s,-12*s,0.8*s,0,Math.PI*2);
+  ctx.fillStyle='#fff'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(1*s,-11*s); ctx.quadraticCurveTo(5*s,-14.5*s,9*s,-11*s);
+  ctx.strokeStyle=outlineC; ctx.lineWidth=1*s; ctx.stroke();
+
+  // --- NOSE (broad, horse-like but human) ---
+  ctx.beginPath(); ctx.ellipse(0,-4*s,5*s,4*s,0,0,Math.PI*2);
+  ctx.fillStyle=skinCol; ctx.fill();
+  // Nostrils
+  ctx.fillStyle=outlineC;
+  ctx.beginPath(); ctx.ellipse(-2.5*s,-3*s,1.5*s,1*s,0.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(2.5*s,-3*s,1.5*s,1*s,-0.3,0,Math.PI*2); ctx.fill();
+
+  // --- BEARD (full, scruffy — Geir's beard) ---
+  // Cheek stubble left
+  ctx.beginPath(); ctx.ellipse(-10*s,-6*s,5*s,7*s,-0.2,0,Math.PI*2);
+  ctx.fillStyle=beardCol; ctx.fill();
+  // Cheek stubble right
+  ctx.beginPath(); ctx.ellipse(10*s,-6*s,5*s,7*s,0.2,0,Math.PI*2);
+  ctx.fillStyle=beardCol; ctx.fill();
+  // Chin beard (main blob)
+  ctx.beginPath(); ctx.ellipse(0,4*s,9*s,7*s,0,0,Math.PI*2);
+  ctx.fillStyle=beardCol; ctx.fill();
+  // Beard texture lines
+  ctx.strokeStyle=isWhite?'#888070':'#a09070'; ctx.lineWidth=0.6*s;
+  [[-6,2,-4,8],[-3,0,-2,7],[0,0,0,8],[3,0,2,7],[6,2,4,8],[-8,-2,-7,4],[8,-2,7,4]].forEach(([x1,y1,x2,y2])=>{
+    ctx.beginPath(); ctx.moveTo(x1*s,y1*s); ctx.lineTo(x2*s,y2*s); ctx.stroke();
+  });
+  // Moustache
+  ctx.beginPath(); ctx.moveTo(-6*s,0*s); ctx.quadraticCurveTo(0*s,3*s,6*s,0*s);
+  ctx.strokeStyle=beardCol; ctx.lineWidth=2.5*s; ctx.lineCap='round'; ctx.stroke();
+
+  // Redraw skin over beard in mouth area
+  ctx.beginPath(); ctx.ellipse(0,1*s,4*s,3*s,0,0,Math.PI*2);
+  ctx.fillStyle=skinCol; ctx.fill();
+
+  // Thin straight mouth (neutral/serious expression)
+  ctx.beginPath(); ctx.moveTo(-4*s,1*s); ctx.lineTo(4*s,1*s);
+  ctx.strokeStyle=isWhite?'#6b4020':'#1a0a00'; ctx.lineWidth=1.4*s; ctx.lineCap='round'; ctx.stroke();
+
+  // --- JERSEY NUMBER 4 ---
+  ctx.font=`bold ${12*s}px 'DM Sans',sans-serif`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle=stripeCol;
+  ctx.fillText('4',0,16*s);
+  ctx.fillStyle=textCol;
+  ctx.font=`bold ${11*s}px 'DM Sans',sans-serif`;
+  ctx.fillText('4',0,16*s);
+
+  ctx.restore();
+}
+
+// ── Draw King (TC) — slim face, short hair, cheekbones, warm smile, crown ──
+function drawKing(ctx, x, y, sz, isWhite){
+  const cx=x+sz/2, cy=y+sz/2;
+  const s=sz/60;
+  ctx.save();
+  ctx.translate(cx,cy);
+
+  const skinCol  = isWhite ? '#d4aa80' : '#a06030';
+  const outlineC = isWhite ? '#5a3a10' : '#c8a050';
+  const hairCol  = isWhite ? '#b0a898' : '#d8cdb0'; // salt-and-pepper, short
+  const shirtCol = isWhite ? '#dde4ee' : '#1a2a3a';
+  const crownCol = '#c8a020';
+  const crownShine = '#f0d060';
+  const gemCol   = '#cc2020';
+
+  // Shadow
+  ctx.beginPath();
+  ctx.ellipse(0,19*s,14*s,4*s,0,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fill();
+
+  // --- SHIRT / BODY ---
+  ctx.beginPath();
+  ctx.ellipse(0,17*s,12*s,13*s,0,0,Math.PI*2);
+  ctx.fillStyle=shirtCol; ctx.fill();
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.8*s; ctx.stroke();
+  // collar
+  ctx.beginPath();
+  ctx.moveTo(-4*s,6*s); ctx.lineTo(0,10*s); ctx.lineTo(4*s,6*s);
+  ctx.strokeStyle=outlineC; ctx.lineWidth=1*s; ctx.stroke();
+
+  // --- NECK (slim) ---
+  ctx.beginPath();
+  ctx.moveTo(-5*s,0*s); ctx.quadraticCurveTo(-6*s,5*s,-5*s,7*s);
+  ctx.lineTo(5*s,7*s); ctx.quadraticCurveTo(6*s,5*s,5*s,0*s); ctx.closePath();
+  ctx.fillStyle=skinCol; ctx.fill();
+
+  // --- HEAD (slim, narrow, high cheekbones) ---
+  ctx.beginPath();
+  ctx.ellipse(0,-9*s,10*s,14*s,0,0,Math.PI*2);
+  ctx.fillStyle=skinCol; ctx.fill();
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.9*s; ctx.stroke();
+
+  // Cheekbone definition (hollow cheeks, slim face)
+  ctx.beginPath(); ctx.ellipse(-8*s,-6*s,3*s,4*s,0.3,0,Math.PI*2);
+  ctx.fillStyle=isWhite?'#c49060':'#904820'; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(8*s,-6*s,3*s,4*s,-0.3,0,Math.PI*2);
+  ctx.fillStyle=isWhite?'#c49060':'#904820'; ctx.fill();
+
+  // --- SHORT HAIR (very close cropped, receding slightly) ---
+  // Hair cap — tight to skull
+  ctx.beginPath();
+  ctx.ellipse(0,-18*s,10*s,8*s,0,0,Math.PI*2);
+  ctx.fillStyle=hairCol; ctx.fill();
+  // Side patches
+  ctx.beginPath(); ctx.ellipse(-9*s,-14*s,3*s,5*s,0.3,0,Math.PI*2);
+  ctx.fillStyle=hairCol; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(9*s,-14*s,3*s,5*s,-0.3,0,Math.PI*2);
+  ctx.fillStyle=hairCol; ctx.fill();
+  // Hair texture dots (short cropped look)
+  ctx.fillStyle=isWhite?'#909088':'#b8a890';
+  for(let i=-3;i<=3;i++){
+    for(let j=0;j<2;j++){
+      ctx.beginPath();
+      ctx.arc(i*3*s,(-20+j*3)*s,0.7*s,0,Math.PI*2); ctx.fill();
+    }
+  }
+  // Redraw face over hair
+  ctx.beginPath();
+  ctx.ellipse(0,-9*s,10*s,14*s,0,0,Math.PI*2);
+  ctx.fillStyle=skinCol; ctx.fill();
+
+  // --- EARS ---
+  ctx.beginPath(); ctx.ellipse(-10.5*s,-10*s,2.5*s,3.5*s,0,0,Math.PI*2);
+  ctx.fillStyle=skinCol; ctx.fill(); ctx.strokeStyle=outlineC; ctx.lineWidth=0.7*s; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(10.5*s,-10*s,2.5*s,3.5*s,0,0,Math.PI*2);
+  ctx.fillStyle=skinCol; ctx.fill(); ctx.strokeStyle=outlineC; ctx.lineWidth=0.7*s; ctx.stroke();
+
+  // --- EYEBROWS (thin, slightly arched — friendly) ---
+  ctx.strokeStyle=hairCol; ctx.lineWidth=1.4*s; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-8*s,-17*s); ctx.quadraticCurveTo(-5*s,-19*s,-2*s,-17*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(8*s,-17*s); ctx.quadraticCurveTo(5*s,-19*s,2*s,-17*s); ctx.stroke();
+
+  // --- EYES (friendly, slightly deep-set) ---
+  // Left
+  ctx.beginPath(); ctx.ellipse(-5*s,-13*s,3.5*s,2.8*s,0,0,Math.PI*2);
+  ctx.fillStyle='#f0ece0'; ctx.fill();
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.7*s; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(-5*s,-13*s,1.8*s,2.2*s,0,0,Math.PI*2);
+  ctx.fillStyle='#2a1a0a'; ctx.fill();
+  ctx.beginPath(); ctx.arc(-4.2*s,-14*s,0.7*s,0,Math.PI*2);
+  ctx.fillStyle='#fff'; ctx.fill();
+  // smile crinkle
+  ctx.beginPath(); ctx.moveTo(-8.5*s,-11*s); ctx.quadraticCurveTo(-7*s,-9*s,-5.5*s,-11*s);
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.6*s; ctx.stroke();
+
+  // Right
+  ctx.beginPath(); ctx.ellipse(5*s,-13*s,3.5*s,2.8*s,0,0,Math.PI*2);
+  ctx.fillStyle='#f0ece0'; ctx.fill();
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.7*s; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(5*s,-13*s,1.8*s,2.2*s,0,0,Math.PI*2);
+  ctx.fillStyle='#2a1a0a'; ctx.fill();
+  ctx.beginPath(); ctx.arc(5.8*s,-14*s,0.7*s,0,Math.PI*2);
+  ctx.fillStyle='#fff'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(8.5*s,-11*s); ctx.quadraticCurveTo(7*s,-9*s,5.5*s,-11*s);
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.6*s; ctx.stroke();
+
+  // --- NOSE (straight, slim, slightly prominent) ---
+  ctx.beginPath(); ctx.moveTo(0,-12*s); ctx.lineTo(-1*s,-5*s); ctx.lineTo(-3*s,-4*s);
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.9*s; ctx.lineCap='round'; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-12*s); ctx.lineTo(1*s,-5*s); ctx.lineTo(3*s,-4*s);
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.9*s; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0,-4.5*s,2.5*s,0,Math.PI);
+  ctx.strokeStyle=outlineC; ctx.lineWidth=0.9*s; ctx.stroke();
+
+  // --- WARM SMILE (key feature) ---
+  ctx.beginPath();
+  ctx.arc(0,-1*s,6*s,0.15,Math.PI-0.15);
+  ctx.strokeStyle=outlineC; ctx.lineWidth=1.4*s; ctx.lineCap='round'; ctx.stroke();
+  // Teeth hint
+  ctx.beginPath(); ctx.ellipse(0,2.5*s,4*s,1.5*s,0,0,Math.PI*2);
+  ctx.fillStyle='#f8f4ee'; ctx.fill();
+  // Smile lines / dimples
+  ctx.beginPath(); ctx.moveTo(-7*s,-3*s); ctx.quadraticCurveTo(-9*s,0*s,-8*s,3*s);
+  ctx.strokeStyle=isWhite?'#b88050':'#804020'; ctx.lineWidth=0.8*s; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(7*s,-3*s); ctx.quadraticCurveTo(9*s,0*s,8*s,3*s);
+  ctx.strokeStyle=isWhite?'#b88050':'#804020'; ctx.lineWidth=0.8*s; ctx.stroke();
+
+  // --- CROWN ---
+  const cBase = -23*s;
+  // Crown base band
+  ctx.beginPath();
+  ctx.rect(-10*s,cBase,20*s,5*s);
+  ctx.fillStyle=crownCol; ctx.fill();
+  ctx.strokeStyle='#8a6010'; ctx.lineWidth=0.6*s; ctx.stroke();
+
+  // Crown points (5 points: left, left-mid, center-tall, right-mid, right)
+  const pts=[
+    [-10,cBase/s],[-10,cBase/s-8],[-5,cBase/s-5],
+    [0,cBase/s-12],[5,cBase/s-5],
+    [10,cBase/s-8],[10,cBase/s]
+  ];
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0]*s,pts[0][1]*s);
+  pts.forEach(([px,py])=>ctx.lineTo(px*s,py*s));
+  ctx.closePath();
+  ctx.fillStyle=crownCol; ctx.fill();
+  ctx.strokeStyle='#8a6010'; ctx.lineWidth=0.7*s; ctx.stroke();
+
+  // Crown shine
+  ctx.beginPath();
+  ctx.moveTo(-8*s,(cBase/s+1)*s); ctx.lineTo(-6*s,(cBase/s+4)*s);
+  ctx.moveTo(-3*s,(cBase/s+1)*s); ctx.lineTo(-2*s,(cBase/s+4)*s);
+  ctx.moveTo(2*s,(cBase/s+1)*s); ctx.lineTo(2*s,(cBase/s+4)*s);
+  ctx.moveTo(6*s,(cBase/s+1)*s); ctx.lineTo(6*s,(cBase/s+4)*s);
+  ctx.strokeStyle=crownShine; ctx.lineWidth=1*s; ctx.stroke();
+
+  // Crown gems
+  [[0,cBase/s-9,'#cc2020'],[-5,cBase/s-2,'#2060cc'],[5,cBase/s-2,'#20aa40']].forEach(([gx,gy,gc])=>{
+    ctx.beginPath(); ctx.arc(gx*s,gy*s,1.8*s,0,Math.PI*2);
+    ctx.fillStyle=gc; ctx.fill();
+    ctx.beginPath(); ctx.arc((gx-0.6)*s,(gy-0.6)*s,0.6*s,0,Math.PI*2);
+    ctx.fillStyle='#fff'; ctx.fill();
+  });
+
+  ctx.restore();
+}
 function draw(){
   ctx.clearRect(0,0,W,W);
   const hset=new Set(hints.map(m=>m.tr+','+m.tc));
@@ -417,13 +799,21 @@ function draw(){
         }
       }
       if(board[r][c]){
-        const g=GLYPHS[board[r][c]];
-        ctx.font=Math.round(SZ*0.7)+'px serif';
-        ctx.textAlign='center'; ctx.textBaseline='middle';
-        ctx.fillStyle='#000';
-        ctx.fillText(g,c*SZ+SZ/2+1,r*SZ+SZ/2+2);
-        ctx.fillStyle=board[r][c][0]==='w'?'#fff':'#111';
-        ctx.fillText(g,c*SZ+SZ/2,r*SZ+SZ/2);
+        const piece=board[r][c];
+        const isW=piece[0]==='w';
+        if(piece[1]==='N'){
+          drawGeir(ctx, c*SZ, r*SZ, SZ, isW);
+        } else if(piece[1]==='K'){
+          drawKing(ctx, c*SZ, r*SZ, SZ, isW);
+        } else {
+          const g=GLYPHS[piece];
+          ctx.font=Math.round(SZ*0.7)+'px serif';
+          ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillStyle='#000';
+          ctx.fillText(g,c*SZ+SZ/2+1,r*SZ+SZ/2+2);
+          ctx.fillStyle=isW?'#fff':'#111';
+          ctx.fillText(g,c*SZ+SZ/2,r*SZ+SZ/2);
+        }
       }
     }
   }
