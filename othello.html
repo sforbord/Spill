@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Othello</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 24px 16px; }
+  h1 { color: #e8e6e1; font-size: 28px; font-weight: 700; letter-spacing: 4px; margin-bottom: 4px; }
+  .tagline { color: #888a8d; font-size: 13px; margin-bottom: 20px; }
+
+  .diff-row { display: flex; gap: 8px; margin-bottom: 18px; }
+  .diff-btn { padding: 7px 20px; font-size: 13px; font-weight: 600; border: 1.5px solid #267a3b; border-radius: 20px; background: transparent; color: #888a8d; cursor: pointer; transition: all 0.15s; }
+  .diff-btn.active { background: #1D9E75; border-color: #1D9E75; color: #fff; }
+  .diff-btn:hover:not(.active) { background: #16213e; color: #e8e6e1; }
+
+  .score-bar { display: flex; align-items: center; justify-content: space-between; background: #0f3460; border-radius: 12px; padding: 12px 20px; width: 100%; max-width: 520px; margin-bottom: 12px; }
+  .score-side { display: flex; align-items: center; gap: 10px; }
+  .disc-icon { width: 22px; height: 22px; border-radius: 50%; }
+  .disc-icon.black { background: #1a1a1a; border: 2px solid #555; }
+  .disc-icon.white { background: #f0ede8; border: 2px solid #bbb; }
+  .score-label { color: #888a8d; font-size: 13px; }
+  .score-num { color: #e8e6e1; font-size: 22px; font-weight: 700; min-width: 28px; }
+  .turn-label { color: #1D9E75; font-size: 13px; font-style: italic; }
+
+  canvas { display: block; border-radius: 10px; cursor: pointer; }
+
+  .msg-bar { background: #0f3460; color: #e8e6e1; font-size: 14px; padding: 11px 20px; border-radius: 10px; width: 100%; max-width: 520px; margin-top: 12px; min-height: 42px; text-align: center; }
+
+  .btn-row { margin-top: 14px; }
+  .new-btn { background: #1D9E75; color: #fff; border: none; border-radius: 24px; padding: 11px 40px; font-size: 15px; font-weight: 700; cursor: pointer; letter-spacing: 1px; transition: background 0.15s; }
+  .new-btn:hover { background: #17856a; }
+
+  .you-label { color: #e8e6e1; }
+</style>
+</head>
+<body>
+
+<h1>OTHELLO</h1>
+<p class="tagline">Du spiller som svart &mdash; maskinen spiller som hvit</p>
+
+<div class="diff-row">
+  <button class="diff-btn active" data-d="1">Enkel</button>
+  <button class="diff-btn" data-d="2">Middels</button>
+  <button class="diff-btn" data-d="3">Vanskelig</button>
+</div>
+
+<div class="score-bar">
+  <div class="score-side">
+    <div class="disc-icon black"></div>
+    <span class="score-label you-label">Du</span>
+    <span class="score-num" id="sc-b">2</span>
+    <div class="disc-icon white" style="margin-left:12px"></div>
+    <span class="score-label">Maskin</span>
+    <span class="score-num" id="sc-w">2</span>
+  </div>
+  <span class="turn-label" id="turn-lbl">Din tur</span>
+</div>
+
+<canvas id="board"></canvas>
+
+<div class="msg-bar" id="msg">Klikk p&aring; et markert felt for &aring; spille</div>
+
+<div class="btn-row">
+  <button class="new-btn" id="btn-new">Nytt spill</button>
+</div>
+
+<script>
+const EMPTY=0,BLACK=1,WHITE=2;
+const DIRS=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const WEIGHTS=[
+  [120,-20,20,5,5,20,-20,120],
+  [-20,-40,-5,-5,-5,-5,-40,-20],
+  [20,-5,15,3,3,15,-5,20],
+  [5,-5,3,3,3,3,-5,5],
+  [5,-5,3,3,3,3,-5,5],
+  [20,-5,15,3,3,15,-5,20],
+  [-20,-40,-5,-5,-5,-5,-40,-20],
+  [120,-20,20,5,5,20,-20,120]
+];
+
+const canvas=document.getElementById('board');
+const ctx=canvas.getContext('2d');
+const CS=62, PAD=8, N=8;
+const W=N*CS+PAD*2;
+canvas.width=W; canvas.height=W;
+canvas.style.width=W+'px'; canvas.style.height=W+'px';
+
+let board,cur,diff=1,gameOver=false,thinking=false,hoverCell=null;
+
+function newBoard(){
+  let b=Array.from({length:8},()=>Array(8).fill(0));
+  b[3][3]=WHITE;b[3][4]=BLACK;b[4][3]=BLACK;b[4][4]=WHITE;
+  return b;
+}
+
+function flips(b,r,c,p){
+  let res=[];
+  for(let[dr,dc]of DIRS){
+    let tmp=[],nr=r+dr,nc=c+dc;
+    while(nr>=0&&nr<8&&nc>=0&&nc<8&&b[nr][nc]&&b[nr][nc]!==p){tmp.push([nr,nc]);nr+=dr;nc+=dc;}
+    if(tmp.length&&nr>=0&&nr<8&&nc>=0&&nc<8&&b[nr][nc]===p)res.push(...tmp);
+  }
+  return res;
+}
+
+function validMoves(b,p){
+  let m=[];
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(!b[r][c]&&flips(b,r,c,p).length)m.push([r,c]);
+  return m;
+}
+
+function applyMove(b,r,c,p){
+  let nb=b.map(row=>[...row]);
+  nb[r][c]=p;
+  for(let[fr,fc]of flips(nb,r,c,p))nb[fr][fc]=p;
+  return nb;
+}
+
+function count(b,p){return b.flat().filter(x=>x===p).length;}
+
+function evalBoard(b,p){
+  let opp=p===BLACK?WHITE:BLACK,s=0;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    if(b[r][c]===p)s+=WEIGHTS[r][c];
+    else if(b[r][c]===opp)s-=WEIGHTS[r][c];
+  }
+  s+=(validMoves(b,p).length-validMoves(b,opp).length)*5;
+  return s;
+}
+
+function minimax(b,depth,alpha,beta,maxing,p){
+  let opp=p===BLACK?WHITE:BLACK,cp=maxing?p:opp;
+  let moves=validMoves(b,cp);
+  if(!depth||!moves.length)return evalBoard(b,p);
+  if(maxing){
+    let best=-1e9;
+    for(let[r,c]of moves){
+      let v=minimax(applyMove(b,r,c,cp),depth-1,alpha,beta,false,p);
+      best=Math.max(best,v);alpha=Math.max(alpha,v);
+      if(beta<=alpha)break;
+    }
+    return best;
+  }else{
+    let best=1e9;
+    for(let[r,c]of moves){
+      let v=minimax(applyMove(b,r,c,cp),depth-1,alpha,beta,true,p);
+      best=Math.min(best,v);beta=Math.min(beta,v);
+      if(beta<=alpha)break;
+    }
+    return best;
+  }
+}
+
+function aiMove(){
+  let moves=validMoves(board,WHITE);
+  if(!moves.length)return null;
+  if(diff===1){
+    let s=[...moves].sort(()=>Math.random()-.5);
+    return s.find(([r,c])=>(r===0||r===7)&&(c===0||c===7))||s[0];
+  }
+  let depth=diff===2?3:6,best=-1e9,bestm=null;
+  for(let[r,c]of moves){
+    let v=minimax(applyMove(board,r,c,WHITE),depth,-1e9,1e9,false,WHITE);
+    if(v>best){best=v;bestm=[r,c];}
+  }
+  return bestm;
+}
+
+function cellBox(r,c){
+  return[PAD+c*CS,PAD+r*CS,PAD+c*CS+CS,PAD+r*CS+CS];
+}
+
+function drawDisc(r,c,player){
+  let[x0,y0,x1,y1]=cellBox(r,c);
+  let cx=(x0+x1)/2,cy=(y0+y1)/2,rad=CS*0.4;
+  ctx.beginPath();
+  ctx.arc(cx,cy,rad,0,Math.PI*2);
+  ctx.fillStyle=player===BLACK?'#1a1a1a':'#f0ede8';
+  ctx.fill();
+  ctx.strokeStyle=player===BLACK?'#555':'#bbb';
+  ctx.lineWidth=1;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx-rad*0.3,cy-rad*0.3,rad*0.22,0,Math.PI*2);
+  ctx.fillStyle=player===BLACK?'#3a3a3a':'#ffffff';
+  ctx.fill();
+}
+
+function render(hints){
+  if(!hints)hints=(!gameOver&&cur===BLACK)?validMoves(board,BLACK):[];
+  let hset=new Set(hints.map(([r,c])=>r+','+c));
+
+  ctx.fillStyle='#1a5c2e';
+  ctx.fillRect(0,0,W,W);
+
+  ctx.strokeStyle='#267a3b';
+  ctx.lineWidth=1;
+  for(let i=0;i<=8;i++){
+    let x=PAD+i*CS,y=PAD+i*CS;
+    ctx.beginPath();ctx.moveTo(x,PAD);ctx.lineTo(x,W-PAD);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(PAD,y);ctx.lineTo(W-PAD,y);ctx.stroke();
+  }
+
+  for(let r=0;r<8;r++){
+    for(let c=0;c<8;c++){
+      let[x0,y0,x1,y1]=cellBox(r,c);
+      let key=r+','+c;
+      if(hoverCell&&hoverCell[0]===r&&hoverCell[1]===c&&hset.has(key)){
+        ctx.fillStyle='#2e8f45';
+        ctx.fillRect(x0+1,y0+1,CS-2,CS-2);
+      }
+      if(hset.has(key)&&!(hoverCell&&hoverCell[0]===r&&hoverCell[1]===c)){
+        let cx=(x0+x1)/2,cy=(y0+y1)/2,dot=CS*0.15;
+        ctx.beginPath();
+        ctx.arc(cx,cy,dot,0,Math.PI*2);
+        ctx.fillStyle='#a8d5b5';
+        ctx.fill();
+      }
+      if(board[r][c])drawDisc(r,c,board[r][c]);
+    }
+  }
+
+  document.getElementById('sc-b').textContent=count(board,BLACK);
+  document.getElementById('sc-w').textContent=count(board,WHITE);
+}
+
+function setMsg(t){document.getElementById('msg').textContent=t;}
+function setTurn(t,col){let l=document.getElementById('turn-lbl');l.textContent=t;l.style.color=col||'#1D9E75';}
+
+function checkGame(){
+  let bm=validMoves(board,BLACK),wm=validMoves(board,WHITE);
+  if(!bm&&!wm){
+    gameOver=true;
+    let sb=count(board,BLACK),sw=count(board,WHITE);
+    setMsg(sb>sw?`Du vant! ${sb}–${sw}`:sb<sw?`Maskinen vant! ${sw}–${sb}`:`Uavgjort! ${sb}–${sb}`);
+    setTurn('Spillet er slutt','#888a8d');
+    render([]);
+    return true;
+  }
+  return false;
+}
+
+function playerMove(r,c){
+  if(gameOver||cur!==BLACK||thinking)return;
+  if(!flips(board,r,c,BLACK).length)return;
+  board=applyMove(board,r,c,BLACK);
+  render([]);
+  if(checkGame())return;
+  cur=WHITE;
+  if(!validMoves(board,WHITE).length){
+    setMsg('Maskinen hopper over (ingen gyldige trekk)');
+    cur=BLACK;
+    render(validMoves(board,BLACK));
+    setTurn('Din tur');
+    return;
+  }
+  setTurn('Maskinens tur...','#888a8d');
+  setMsg('Maskinen tenker...');
+  thinking=true;
+  setTimeout(doAiMove,diff===3?700:400);
+}
+
+function doAiMove(){
+  let mv=aiMove();
+  if(mv)board=applyMove(board,mv[0],mv[1],WHITE);
+  thinking=false;
+  if(checkGame())return;
+  cur=BLACK;
+  let bm=validMoves(board,BLACK);
+  if(!bm.length){
+    setMsg('Du hopper over (ingen gyldige trekk)');
+    setTurn('Maskinens tur...','#888a8d');
+    thinking=true;
+    setTimeout(doAiMove,500);
+    return;
+  }
+  setTurn('Din tur');
+  setMsg('Klikk på et markert felt for å spille');
+  render(bm);
+}
+
+function startGame(){
+  if(thinking)return;
+  board=newBoard();cur=BLACK;gameOver=false;thinking=false;
+  setMsg('Klikk på et markert felt for å spille');
+  setTurn('Din tur');
+  render();
+}
+
+canvas.addEventListener('mousemove',e=>{
+  let rect=canvas.getBoundingClientRect();
+  let x=e.clientX-rect.left,y=e.clientY-rect.top;
+  let c=Math.floor((x-PAD)/CS),r=Math.floor((y-PAD)/CS);
+  let cell=(r>=0&&r<8&&c>=0&&c<8)?[r,c]:null;
+  if(JSON.stringify(cell)!==JSON.stringify(hoverCell)){
+    hoverCell=cell;
+    render();
+  }
+});
+
+canvas.addEventListener('mouseleave',()=>{hoverCell=null;render();});
+
+canvas.addEventListener('click',e=>{
+  let rect=canvas.getBoundingClientRect();
+  let x=e.clientX-rect.left,y=e.clientY-rect.top;
+  let c=Math.floor((x-PAD)/CS),r=Math.floor((y-PAD)/CS);
+  if(r>=0&&r<8&&c>=0&&c<8)playerMove(r,c);
+});
+
+document.querySelectorAll('.diff-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.diff-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    diff=+btn.dataset.d;
+    startGame();
+  });
+});
+
+document.getElementById('btn-new').addEventListener('click',startGame);
+
+startGame();
+</script>
+</body>
+</html>
